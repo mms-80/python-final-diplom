@@ -1,0 +1,101 @@
+version: '3.9'
+
+volumes:
+  pg_db_data:
+
+services:
+
+  redis:
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    command: redis-server
+    ports:
+      - "6379:6379"
+
+  pg_db:
+    image: postgres:16.2-alpine
+    environment:
+      PGDATA: "/var/lib/postgresql/data/pgdata"
+      POSTGRES_DB: ${PG_DB}
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+    volumes:
+      - pg_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "sh -c 'pg_isready -U ${PG_USER} -d ${PG_DB}'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+
+  app:
+    build: /reference/netology_pd_diplom
+    command:
+      - /bin/sh
+      - -c
+      - |
+        python manage.py migrate
+        python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    environment:
+      PG_HOST: pg_db
+      PG_PORT: 5432
+      PG_DB: ${PG_DB}
+      PG_USER: ${PG_USER}
+      PG_PASSWORD: ${PG_PASSWORD}
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CACHEOPS_REDIS: redis://redis:6379/3
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+    depends_on:
+      - pg_db
+      - celery
+
+  celery:
+    build: /reference/netology_pd_diplom
+    command: celery -A netology_pd_diplom worker -l INFO
+    environment:
+      PG_HOST: pg_db
+      PG_PORT: 5432
+      PG_DB: ${PG_DB}
+      PG_USER: ${PG_USER}
+      PG_PASSWORD: ${PG_PASSWORD}
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CACHEOPS_REDIS: redis://redis:6379/3
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+    depends_on:
+      - redis
+      - pg_db
+
+  celery_flower:
+    build: /reference/netology_pd_diplom
+    command: celery -A netology_pd_diplom flower -l INFO 
+    ports:
+      - "5555:5555"
+    environment:
+      PG_HOST: pg_db
+      PG_PORT: 5432
+      PG_DB: ${PG_DB}
+      PG_USER: ${PG_USER}
+      PG_PASSWORD: ${PG_PASSWORD}
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      CACHEOPS_REDIS: redis://redis:6379/3
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+    depends_on:
+      - redis
+      - pg_db
